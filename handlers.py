@@ -246,7 +246,10 @@ async def handle_text(message: types.Message):
         return
 
     # Парсим через нейросеть
-    await message.answer_chat_action("typing")
+     try:
+        await message.answer_chat_action("typing")
+    except Exception:
+        pass
     parsed = router.parser.parse(message.text)
 
     # ── Чат ──────────────────────────────────────────────────────
