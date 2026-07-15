@@ -7,8 +7,8 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode, BotCommandScopeDefault
-from aiogram.types import BotCommand
+from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from config import BOT_TOKEN, AI_API_KEY, AI_MODEL, AI_BASE_URL, AI_MAX_TOKENS, DIGEST_TIME, DB_PATH
 from database import Database
