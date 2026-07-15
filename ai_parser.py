@@ -133,24 +133,43 @@ def simple_parse(text: str) -> ParsedTask:
 
     # ── 6. Дата и время ───────────────────────────────────────
 
-    # --- "через X минут/часов/дней/недель" ---
-    in_x_match = re.search(
-        r'через\s+(\d+)\s*(минут[уыа]?|час[аов]*|д[её]н[яей]*|недел[юьи]*)',
-        lower
-    )
-    if in_x_match:
-        amount = int(in_x_match.group(1))
-        unit = in_x_match.group(2)
-        if unit.startswith("минут"):
-            target = today + timedelta(minutes=amount)
-        elif unit.startswith("час"):
-            target = today + timedelta(hours=amount)
-        elif unit.startswith("дн") or unit.startswith("дё"):
-            target = today + timedelta(days=amount)
-        elif unit.startswith("недел"):
-            target = today + timedelta(weeks=amount)
-        else:
-            target = today + timedelta(hours=amount)
+    # --- "через полчаса/полчаса/четверть часа" (словесные) ---
+    in_x_match = None
+    target = None
+
+    # "через полчаса", "через пол часа"
+    if re.search(r'через\s+пол\s*часа', lower):
+        target = today + timedelta(minutes=30)
+    # "через четверть часа"
+    elif re.search(r'через\s+четверть\s+часа', lower):
+        target = today + timedelta(minutes=15)
+    # "через полдня"
+    elif re.search(r'через\s+полдня', lower):
+        target = today + timedelta(hours=12)
+    # "через неделю"
+    elif re.search(r'через\s+неделю', lower):
+        target = today + timedelta(weeks=1)
+    else:
+        # "через X минут/часов/дней/недель"
+        in_x_match = re.search(
+            r'через\s+(\d+)\s*(минут[уыа]?|час[аов]*|д[её]н[яей]*|недел[юьи]*)',
+            lower
+        )
+        if in_x_match:
+            amount = int(in_x_match.group(1))
+            unit = in_x_match.group(2)
+            if unit.startswith("минут"):
+                target = today + timedelta(minutes=amount)
+            elif unit.startswith("час"):
+                target = today + timedelta(hours=amount)
+            elif unit.startswith("дн") or unit.startswith("дё"):
+                target = today + timedelta(days=amount)
+            elif unit.startswith("недел"):
+                target = today + timedelta(weeks=amount)
+            else:
+                target = today + timedelta(hours=amount)
+
+    if target is not None:
         deadline = target.strftime("%Y-%m-%d %H:%M")
         deadline_date = target.strftime("%Y-%m-%d")
     # --- "завтра/послезавтра/сегодня" ---
@@ -177,7 +196,7 @@ def simple_parse(text: str) -> ParsedTask:
             deadline_date = today.strftime("%Y-%m-%d")
 
     # --- Время (если ещё не задано через "через") ---
-    if not in_x_match:
+    if target is None:
         time_match = re.search(r'(\d{1,2})\s*[:\.]\s*(\d{2})', lower)
         if time_match:
             hour = int(time_match.group(1))
@@ -205,7 +224,11 @@ def simple_parse(text: str) -> ParsedTask:
 
     # ── 7. Извлекаем название задачи ──────────────────────────
     title = text.strip()
-    # Убираем "через X ..." целиком
+    # Убираем "через ..." целиком
+    title = re.sub(r'через\s+пол\s*часа', '', title)
+    title = re.sub(r'через\s+четверть\s+часа', '', title)
+    title = re.sub(r'через\s+полдня', '', title)
+    title = re.sub(r'через\s+неделю', '', title)
     title = re.sub(r'через\s+\d+\s*(минут[уыа]?|час[аов]*|д[её]н[яей]*|недел[юьи]*)', '', title)
     # Убираем временные маркеры
     for word in ["завтра", "послезавтра", "сегодня", "утром", "днём", "вечером",
