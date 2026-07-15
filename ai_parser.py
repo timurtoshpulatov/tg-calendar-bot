@@ -225,17 +225,17 @@ def simple_parse(text: str) -> ParsedTask:
     # ── 7. Извлекаем название задачи ──────────────────────────
     title = text.strip()
     # Убираем "через ..." целиком
-    title = re.sub(r'через\s+пол\s*часа', '', title)
-    title = re.sub(r'через\s+четверть\s+часа', '', title)
-    title = re.sub(r'через\s+полдня', '', title)
-    title = re.sub(r'через\s+неделю', '', title)
-    title = re.sub(r'через\s+\d+\s*(минут[уыа]?|час[аов]*|д[её]н[яей]*|недел[юьи]*)', '', title)
+    title = re.sub(r'через\s+пол\s*часа', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'через\s+четверть\s+часа', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'через\s+полдня', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'через\s+неделю', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'через\s+\d+\s*(минут[уыа]?|час[аов]*|д[её]н[яей]*|недел[юьи]*)', '', title, flags=re.IGNORECASE)
     # Убираем временные маркеры
     for word in ["завтра", "послезавтра", "сегодня", "утром", "днём", "вечером",
                   "каждый день", "ежедневно", "по понедельникам", "еженедельно",
                   "ежемесячно", "каждый месяц", "каждую неделю"]:
         title = title.replace(word, "")
-    title = re.sub(r'в\s+\d{1,2}\s*(утра|вечера|дн|ут|веч)?', '', title)
+    title = re.sub(r'в\s+\d{1,2}\s*(утра|вечера|дн|ут|веч)?', '', title, flags=re.IGNORECASE)
     title = re.sub(r'\d{1,2}\s*[:\.]\s*\d{2}', '', title)
     title = re.sub(r'\d{1,2}[.\-/]\d{1,2}', '', title)
     title = title.strip(" ,.-")
