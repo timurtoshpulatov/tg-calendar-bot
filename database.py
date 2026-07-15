@@ -1,5 +1,18 @@
 import sqlite3
+import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from config import TIMEZONE
+
+
+def now_moscow() -> datetime:
+    """Текущее время в Москве."""
+    return datetime.now(TIMEZONE)
+
+
+def now_str() -> str:
+    """Текущее время в Москве как строка."""
+    return now_moscow().strftime("%Y-%m-%d %H:%M:%S")
 
 
 class Database:
@@ -22,46 +35,50 @@ class Database:
                     created_at TEXT NOT NULL,
                     category TEXT DEFAULT 'общее',
                     repeat TEXT DEFAULT 'none',
-                    repeat_days TEXT DEFAULT NULL
+                    repeat_days TEXT DEFAULT NULL,
+                    priority TEXT DEFAULT 'normal'
                 )
             """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_remind
                 ON tasks(notified, remind_at)
             """)
-            # Миграция: добавляем колонки если их нет
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN repeat TEXT DEFAULT 'none'")
-            except sqlite3.OperationalError:
-                pass
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN repeat_days TEXT DEFAULT NULL")
-            except sqlite3.OperationalError:
-                pass
+            # Миграции
+            for col, default in [
+                ("repeat", "TEXT DEFAULT 'none'"),
+                ("repeat_days", "TEXT DEFAULT NULL"),
+                ("priority", "TEXT DEFAULT 'normal'"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {default}")
+                except sqlite3.OperationalError:
+                    pass
+
+    # ── Добавление задачи ─────────────────────────────────────
 
     def add_task(self, user_id: int, title: str, deadline: str,
                  description: str = "", category: str = "общее",
-                 repeat: str = "none", repeat_days: list = None) -> int:
+                 repeat: str = "none", repeat_days: list = None,
+                 priority: str = "normal") -> int:
         remind_at = self._calc_remind_at(deadline)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        import json
+        created = now_str()
         repeat_days_json = json.dumps(repeat_days) if repeat_days else None
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO tasks
-                   (user_id, title, description, deadline, remind_at, created_at, category, repeat, repeat_days)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (user_id, title, description, deadline, remind_at, now, category, repeat, repeat_days_json)
+                   (user_id, title, description, deadline, remind_at,
+                    created_at, category, repeat, repeat_days, priority)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, title, description, deadline, remind_at,
+                 created, category, repeat, repeat_days_json, priority)
             )
             return cur.lastrowid
 
-    # ── Поиск задач ─────────────────────────────────────────────
+    # ── Поиск задач ───────────────────────────────────────────
 
     def find_task_by_title(self, user_id: int, query: str) -> dict | None:
-        """Ищет первую активную задачу по частичному совпадению названия."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            # Ищем по названию и описанию
             row = conn.execute(
                 """SELECT * FROM tasks
                    WHERE user_id = ? AND status = 'active'
@@ -72,7 +89,6 @@ class Database:
             return dict(row) if row else None
 
     def find_tasks_by_title(self, user_id: int, query: str) -> list[dict]:
-        """Ищет все активные задачи по частичному совпадению названия."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -85,7 +101,6 @@ class Database:
             return [dict(r) for r in rows]
 
     def find_last_active_task(self, user_id: int) -> dict | None:
-        """Находит последнюю активную задачу (самый ближайший дедлайн)."""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -96,32 +111,28 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
-    # ── Напоминания ─────────────────────────────────────────────
+    # ── Напоминания ───────────────────────────────────────────
 
     def get_reminders_due(self) -> list[dict]:
-        """Задачи, которые пора напомнить (notified=0, remind_at <= now)."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current = now_str()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM tasks
                    WHERE notified = 0 AND remind_at IS NOT NULL AND remind_at <= ?
                    AND status = 'active'""",
-                (now,)
+                (current,)
             ).fetchall()
             return [dict(r) for r in rows]
 
     def mark_notified(self, task_id: int):
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "UPDATE tasks SET notified = 1 WHERE id = ?",
-                (task_id,)
-            )
+            conn.execute("UPDATE tasks SET notified = 1 WHERE id = ?", (task_id,))
 
-    # ── Просмотр задач ──────────────────────────────────────────
+    # ── Просмотр задач ────────────────────────────────────────
 
     def get_today_tasks(self, user_id: int) -> list[dict]:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_moscow().strftime("%Y-%m-%d")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -133,7 +144,7 @@ class Database:
             return [dict(r) for r in rows]
 
     def get_upcoming_tasks(self, user_id: int, days: int = 7) -> list[dict]:
-        end = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        end = (now_moscow() + timedelta(days=days)).strftime("%Y-%m-%d")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -145,7 +156,6 @@ class Database:
             return [dict(r) for r in rows]
 
     def get_all_user_ids(self) -> list[int]:
-        """Все пользователи, у которых есть активные задачи."""
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 "SELECT DISTINCT user_id FROM tasks WHERE status = 'active'"
@@ -160,7 +170,7 @@ class Database:
             ).fetchone()
             return dict(row) if row else None
 
-    # ── Изменение задач ─────────────────────────────────────────
+    # ── Изменение задач ───────────────────────────────────────
 
     def complete_task(self, task_id: int, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:
@@ -178,26 +188,89 @@ class Database:
             )
             return cur.rowcount > 0
 
-    # ── Повторяющиеся задачи ────────────────────────────────────
+    # ── Статистика ────────────────────────────────────────────
+
+    def get_stats(self, user_id: int) -> dict:
+        """Статистика пользователя."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+
+            # Всего задач
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM tasks WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()['cnt']
+
+            # Активные
+            active = conn.execute(
+                "SELECT COUNT(*) as cnt FROM tasks WHERE user_id = ? AND status = 'active'",
+                (user_id,)
+            ).fetchone()['cnt']
+
+            # Выполненные
+            completed = conn.execute(
+                "SELECT COUNT(*) as cnt FROM tasks WHERE user_id = ? AND status = 'completed'",
+                (user_id,)
+            ).fetchone()['cnt']
+
+            # Повторяющиеся
+            repeating = conn.execute(
+                "SELECT COUNT(*) as cnt FROM tasks WHERE user_id = ? AND status = 'active' AND repeat != 'none' AND repeat IS NOT NULL",
+                (user_id,)
+            ).fetchone()['cnt']
+
+            # По категориям
+            cats = conn.execute(
+                """SELECT category, COUNT(*) as cnt FROM tasks
+                   WHERE user_id = ? AND status = 'active'
+                   GROUP BY category ORDER BY cnt DESC""",
+                (user_id,)
+            ).fetchall()
+
+            # По приоритетам
+            pris = conn.execute(
+                """SELECT priority, COUNT(*) as cnt FROM tasks
+                   WHERE user_id = ? AND status = 'active'
+                   GROUP BY priority ORDER BY cnt DESC""",
+                (user_id,)
+            ).fetchall()
+
+            return {
+                'total': total,
+                'active': active,
+                'completed': completed,
+                'repeating': repeating,
+                'categories': {r['category']: r['cnt'] for r in cats},
+                'priorities': {r['priority']: r['cnt'] for r in pris},
+            }
+
+    def get_completed_today(self, user_id: int) -> int:
+        """Сколько задач выполнено сегодня."""
+        today = now_moscow().strftime("%Y-%m-%d")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) as cnt FROM tasks
+                   WHERE user_id = ? AND status = 'completed'
+                   AND deadline LIKE ?""",
+                (user_id, f"{today}%")
+            ).fetchone()
+            return row['cnt'] if row else 0
+
+    # ── Повторяющиеся задачи ──────────────────────────────────
 
     def get_repeating_tasks(self) -> list[dict]:
-        """Активные повторяющиеся задачи, у которых deadline уже прошёл."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current = now_str()
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT * FROM tasks
                    WHERE repeat != 'none' AND repeat IS NOT NULL
                    AND deadline <= ? AND status = 'active'""",
-                (now,)
+                (current,)
             ).fetchall()
             return [dict(r) for r in rows]
 
     def create_next_occurrence(self, task: dict) -> int | None:
-        """Создаёт следующее вхождение повторяющейся задачи."""
-        import json
-        from datetime import datetime, timedelta
-
         try:
             dt = datetime.strptime(task['deadline'], "%Y-%m-%d %H:%M")
         except ValueError:
@@ -218,14 +291,13 @@ class Database:
             next_dt = dt + timedelta(days=1)
         elif repeat == 'weekly':
             if repeat_days:
-                # Находим следующий указанный день недели
                 day_map = {
                     'monday': 0, 'tuesday': 1, 'wednesday': 2,
                     'thursday': 3, 'friday': 4, 'saturday': 5, 'sunday': 6
                 }
                 target_weekdays = [day_map[d.lower()] for d in repeat_days if d.lower() in day_map]
                 next_dt = dt + timedelta(days=1)
-                for _ in range(14):  # ищем до 2 недель вперёд
+                for _ in range(14):
                     if next_dt.weekday() in target_weekdays:
                         break
                     next_dt += timedelta(days=1)
@@ -242,33 +314,32 @@ class Database:
             try:
                 next_dt = dt.replace(year=year, month=month)
             except ValueError:
-                # Если дня нет в следующем месяце (например, 31 февраля)
                 next_dt = dt + timedelta(days=32)
                 next_dt = next_dt.replace(day=1)
         else:
             return None
 
-        # Создаём новую задачу
         new_deadline = next_dt.strftime("%Y-%m-%d %H:%M")
         remind_at = self._calc_remind_at(new_deadline)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        created = now_str()
 
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute(
                 """INSERT INTO tasks
-                   (user_id, title, description, deadline, remind_at, created_at, category, repeat, repeat_days)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (user_id, title, description, deadline, remind_at,
+                    created_at, category, repeat, repeat_days, priority)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (task['user_id'], task['title'], task.get('description', ''),
-                 new_deadline, remind_at, now, task.get('category', 'общее'),
-                 task.get('repeat', 'none'), task.get('repeat_days'))
+                 new_deadline, remind_at, created, task.get('category', 'общее'),
+                 task.get('repeat', 'none'), task.get('repeat_days'),
+                 task.get('priority', 'normal'))
             )
             return cur.lastrowid
 
-    # ── Вспомогательные ─────────────────────────────────────────
+    # ── Вспомогательные ───────────────────────────────────────
 
     @staticmethod
     def _calc_remind_at(deadline: str) -> str:
-        """Отнимает REMINDER_MINUTES от дедлайна."""
         try:
             dt = datetime.strptime(deadline, "%Y-%m-%d %H:%M:%S")
         except ValueError:

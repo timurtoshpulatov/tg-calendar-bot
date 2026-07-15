@@ -1,15 +1,17 @@
 """
 Планировщик:
-  - раз в 30 секунд проверяет БД и отправляет напоминания о задачах
-  - раз в 60 секунд проверяет, не пора ли отправить ежедневную сводку
-  - обрабатывает повторяющиеся задачи (создаёт следующее вхождение)
+  - раз в 30 секунд проверяет БД и отправляет напоминания
+  - обрабатывает повторяющиеся задачи
+  - ежедневная сводка
 """
 
 import asyncio
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 from database import Database
+from config import TIMEZONE
 
 
 class ReminderScheduler:
@@ -18,7 +20,7 @@ class ReminderScheduler:
         self.db = db
         self.digest_time = digest_time
         self._running = False
-        self._last_digest_date = ""   # дата последней отправленной сводки (YYYY-MM-DD)
+        self._last_digest_date = ""
 
     async def start(self):
         self._running = True
@@ -34,7 +36,7 @@ class ReminderScheduler:
     def stop(self):
         self._running = False
 
-    # ── Напоминания ──────────────────────────────────────────────
+    # ── Напоминания ────────────────────────────────────────────
 
     async def _check_reminders(self):
         tasks = self.db.get_reminders_due()
@@ -60,30 +62,27 @@ class ReminderScheduler:
             except Exception as e:
                 print(f"[SCHEDULER] Ошибка отправки #{task['id']}: {e}")
 
-    # ── Повторяющиеся задачи ─────────────────────────────────────
+    # ── Повторяющиеся задачи ───────────────────────────────────
 
     async def _check_repeating_tasks(self):
-        """Для каждой прошедшей повторяющейся задачи создаём следующее вхождение."""
         tasks = self.db.get_repeating_tasks()
         for task in tasks:
             try:
                 new_id = self.db.create_next_occurrence(task)
                 if new_id:
-                    print(f"[SCHEDULER] 🔁 Новое вхождение: '{task['title']}' → #{new_id} (пользователь {task['user_id']})")
+                    print(f"[SCHEDULER] 🔁 Новое вхождение: '{task['title']}' → #{new_id}")
             except Exception as e:
                 print(f"[SCHEDULER] Ошибка создания повтора #{task['id']}: {e}")
 
-    # ── Ежедневная сводка ────────────────────────────────────────
+    # ── Ежедневная сводка ──────────────────────────────────────
 
     async def _check_digest(self):
-        now = datetime.now()
+        now = datetime.now(TIMEZONE)
         today = now.strftime("%Y-%m-%d")
 
-        # Уже отправляли сегодня?
         if self._last_digest_date == today:
             return
 
-        # Проверяем, настало ли время сводки
         target_h, target_m = map(int, self.digest_time.split(":"))
         if now.hour < target_h or (now.hour == target_h and now.minute < target_m):
             return
