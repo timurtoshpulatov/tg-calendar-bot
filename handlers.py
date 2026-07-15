@@ -1,4 +1,4 @@
-from aiogram import Router, types, F
+from aiogram import Router, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
