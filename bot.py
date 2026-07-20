@@ -8,11 +8,9 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeDefault
 
-from config import (
-    BOT_TOKEN, AI_API_KEY, AI_MODEL, AI_BASE_URL, AI_MAX_TOKENS,
-    DIGEST_TIME, DB_PATH
-)
+from config import BOT_TOKEN, AI_API_KEY, AI_MODEL, AI_BASE_URL, AI_MAX_TOKENS, DIGEST_TIME, DB_PATH
 from database import Database
 from ai_parser import TaskParser
 from scheduler import ReminderScheduler
@@ -22,17 +20,13 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main():
-    # Инициализация бота
+    print("🚀 Запуск бота-календаря @{me.username}...")
+    print(f"   Модель ИИ: {AI_MODEL}")
+
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
-
-    # Показываем @username бота в логах при старте
-    me = await bot.get_me()
-    print(f"🚀 Запуск бота-календаря @{me.username}...")
-    print(f"   Модель ИИ: {AI_MODEL}")
-
     dp = Dispatcher()
     db = Database(DB_PATH)
     parser = TaskParser(
@@ -42,11 +36,24 @@ async def main():
         max_tokens=AI_MAX_TOKENS,
     )
 
+    # ── Устанавливаем меню команд ─────────────────────────────
+    commands = [
+        BotCommand(command="start", description="🚀 Запуск бота"),
+        BotCommand(command="today", description="📋 Задачи на сегодня"),
+        BotCommand(command="week", description="📅 Задачи на неделю"),
+        BotCommand(command="stats", description="📊 Статистика"),
+        BotCommand(command="done", description="✅ Отметить задачу выполненной"),
+        BotCommand(command="del", description="🗑 Удалить задачу"),
+        BotCommand(command="help", description="📖 Как пользоваться"),
+    ]
+    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    print("✅ Меню команд установлено!")
+
     # Подключаем обработчики
     setup_handlers(db, parser)
     dp.include_router(router)
 
-    # Запускаем планировщик напоминаний
+    # Запускаем планировщик
     scheduler = ReminderScheduler(bot, db, digest_time=DIGEST_TIME)
     asyncio.create_task(scheduler.start())
 
