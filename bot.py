@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main():
-    print("🚀 Запуск бота-календаря @{me.username}...")
+    print("🚀 Запуск бота-календаря...")
     print(f"   Модель ИИ: {AI_MODEL}")
 
     bot = Bot(
